@@ -22,28 +22,29 @@ $aes = [System.Security.Cryptography.Aes]::Create()
 
 $aes.KeySize = 256
 
-Write-Host (Get-Content -Path $EnvFilePath -TotalCount 2)[-1].Substring(17, 64)
+$encryptedIV = [System.Convert]::FromBase64String($IV)
 
-$encryptor = $aes.CreateEncryptor([System.Convert]::FromHexString((ConvertFrom-SecureString -SecureString $encryptionKey)), [System.Text.Encoding]::UTF8.GetBytes($IV))
+$encryptor = $aes.CreateEncryptor([System.Convert]::FromHexString($encryptionKey), $encryptedIV)
 
-$memoryStream = New-Object -TypeName IO.MemoryStream
-$cryptoStream = New-Object -TypeName Security.Cryptography.CryptoStream -ArgumentList @($memoryStream, $encryptor, [System.Security.Cryptography.CryptoStreamMode]::Write)
-$streamWriter = New-Object -TypeName System.IO -ArgumentList @($cryptoStream)
-$streamWriter.Write((ConvertFrom-SecureString -SecureString $clientSecret))
+$memoryStream = New-Object System.IO.MemoryStream
 
-Write-Host $memoryStream.ToArray()
+$cryptoStream = New-Object System.Security.Cryptography.CryptoStream ($memoryStream, $encryptor, [System.Security.Cryptography.CryptoStreamMode]::Write)
+$streamWriter = New-Object System.IO.StreamWriter $cryptoStream
+$streamWriter.Write($clientSecret)
+$streamWriter.Flush()
+$cryptoStream.FlushFinalBlock()
+$encryptedBytes = $memoryStream.ToArray()
 
 $connection = New-Object System.Data.SqlClient.SqlConnection
+$connection.ConnectionString = $conn 
 $connection.OpenAsync() | Out-Null
 
 $command = $connection.CreateCommand()
 $command.CommandText = @"
-INSERT INTO [dbo].[Clients] ([name], [secret], [iv])  VALUES ([],[],[])
+INSERT INTO [dbo].[Clients] ([name], [secret], [iv])  VALUES ([$ClientName],[$encryptedBytes],[$encryptedIV])
 "@
 
-
 $executeTask = $command.ExecuteNonQueryAsync()
-
 $executeTask.Wait()
 
 

@@ -33,12 +33,14 @@ $aes = [System.Security.Cryptography.Aes]::Create()
 $aes.KeySize = 256
 $aes.Padding = [System.Security.Cryptography.PaddingMode]::PKCS7
 
-$encryptedIV = [System.Convert]::FromBase64String($IV)
+$aes.Key = [System.Convert]::FromHexString($encryptionKey)
+$aes.IV = [System.Convert]::FromBase64String($IV)
 
-$encryptor = $aes.CreateEncryptor([System.Convert]::FromHexString($encryptionKey), $encryptedIV)
+$encryptor = $aes.CreateEncryptor()
 
 # Encrypt the plaintext
 $memoryStream = New-Object System.IO.MemoryStream
+$memoryStream.Write([byte[]]$aes.IV, 0, $aes.IV.Length)
 $cryptoStream = New-Object System.Security.Cryptography.CryptoStream($memoryStream, $encryptor, [System.Security.Cryptography.CryptoStreamMode]::Write)
 $streamWriter = New-Object System.IO.StreamWriter($cryptoStream)
 
@@ -56,15 +58,14 @@ $connectionAsync.GetAwaiter().GetResult()
 
 $command = $connection.CreateCommand()
 $command.CommandText = @"
-INSERT INTO [dbo].[Clients] ([ID], [name], [secret], [iv])  VALUES (@Value1, @Value2, @Value3, @Value4)
+INSERT INTO [dbo].[Clients] ([ID], [name], [secret])  VALUES (@Value1, @Value2, @Value3)
 "@
 
 $command.Parameters.Add("@Value1", [System.Data.SqlDbType]::UniqueIdentifier).Value = [guid]::Parse($clientID)
 $command.Parameters.Add("@Value2", [System.Data.SqlDbType]::VarChar).Value = $ClientName
 $command.Parameters.Add("@Value3", [System.Data.SqlDbType]::VarBinary).Value = $encryptedBytes
-$command.Parameters.Add("@Value4", [System.Data.SqlDbType]::VarBinary).Value = $encryptedIV
 
 $executeTask = $command.ExecuteNonQueryAsync()
 $executeTask.GetAwaiter().GetResult()
 
-
+Write-Host "Client Credentials can be located in the Downloads folder"
